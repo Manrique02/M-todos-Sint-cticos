@@ -1,0 +1,532 @@
+\documentclass[12pt]{article}
+\usepackage[utf-8]{inputenc}
+\usepackage[spanish]{babel}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{amsmath}
+
+\geometry{margin=1in}
+
+% Configurar código
+\lstset{
+    language=go,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray},
+    stringstyle=\color{red},
+    breaklines=true,
+    tabsize=4,
+    showstringspaces=false,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    backgroundcolor=\color{lightgray!20}
+}
+
+% Encabezado y pie de página
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{Analizador Sintáctico}
+\lhead{\today}
+\cfoot{\thepage}
+
+\title{\textbf{Analizador Sintáctico} \\ \textit{Documentación y Explicación del Proyecto}}
+\author{Analizador de Expresiones Matemáticas}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\newpage
+\tableofcontents
+\newpage
+
+% ============================================
+\section{Introducción}
+% ============================================
+
+Un \textbf{analizador sintáctico} (o \textit{parser}) es una herramienta fundamental en la teoría de compiladores. Su propósito es tomar una secuencia de símbolos (tokens) y validar si siguen las reglas de una gramática formal, construyendo una estructura de árbol sintáctico que representa la composición jerárquica del programa o expresión.
+
+Este proyecto implementa \textbf{tres métodos diferentes} de análisis sintáctico para validar y analizar expresiones matemáticas simples con operadores de suma (+), multiplicación (*) y paréntesis.
+
+\subsection{Objetivos del Proyecto}
+
+\begin{itemize}
+    \item Implementar tres algoritmos distintos de análisis sintáctico
+    \item Proporcionar una interfaz gráfica interactiva y amigable
+    \item Demostrar cómo funcionan diferentes estrategias de análisis
+    \item Explicar paso a paso el proceso de análisis
+\end{itemize}
+
+% ============================================
+\section{Conceptos Fundamentales}
+% ============================================
+
+\subsection{Gramática Formal}
+
+La gramática utilizada en este proyecto es una \textbf{gramática libre de contexto (CFG)} que define las reglas para expresiones matemáticas válidas:
+
+\begin{verbatim}
+E  → T E'
+E' → + T E' | ε
+T  → F T'
+T' → * F T' | ε
+F  → ( E ) | num
+\end{verbatim}
+
+\textbf{Explicación:}
+\begin{itemize}
+    \item $E$ (Expresión): Representa una expresión completa
+    \item $T$ (Término): Un término es un factor multiplicado por otros factores
+    \item $F$ (Factor): Un factor es un número o una subexpresión entre paréntesis
+    \item $E'$ y $T'$: Son producciones recursivas que permiten múltiples operaciones
+    \item $\epsilon$ (Épsilon): Representa la producción vacía
+\end{itemize}
+
+\subsection{Tokens}
+
+Los tokens son los símbolos básicos que el analizador reconoce:
+
+\begin{itemize}
+    \item \texttt{num}: Un número (cualquier secuencia de dígitos)
+    \item \texttt{+}: Operador de suma
+    \item \texttt{*}: Operador de multiplicación
+    \item \texttt{(} y \texttt{)}: Paréntesis para agrupar
+    \item \texttt{EOF}: Fin de entrada
+\end{itemize}
+
+% ============================================
+\section{Métodos de Análisis Sintáctico}
+% ============================================
+
+Este proyecto implementa tres enfoques distintos: dos descendentes (top-down) y uno ascendente (bottom-up).
+
+\subsection{1. Análisis Predictivo Recursivo}
+
+\subsubsection{¿Qué es?}
+
+Es un método \textbf{descendente} que implementa directamente cada regla de la gramática como una función recursiva. Comienza desde el símbolo inicial y desciende hacia los terminales.
+
+\subsubsection{Cómo Funciona}
+
+\begin{enumerate}
+    \item \textbf{Lee un token} de la entrada
+    \item \textbf{Decide qué regla aplicar} basándose en el token actual
+    \item \textbf{Llama recursivamente} a las funciones correspondientes
+    \item \textbf{Verifica} que cada token coincida con lo esperado
+    \item \textbf{Retrocede} cuando encuentra una producción vacía ($\epsilon$)
+\end{enumerate}
+
+\subsubsection{Implementación en Go}
+
+\begin{lstlisting}
+// E → T E'
+func (p *PredictivoRecursivo) E() bool {
+    return p.T() && p.El()
+}
+
+// E' → + T E' | ε
+func (p *PredictivoRecursivo) El() bool {
+    if p.currentToken == "+" {
+        return p.match("+") && p.T() && p.El()
+    }
+    return true // Producción vacía
+}
+\end{lstlisting}
+
+\subsubsection{Ventajas}
+
+\begin{itemize}
+    \item Directo y fácil de entender
+    \item Directamente relacionado con la gramática
+    \item No requiere tabla predictiva precalculada
+\end{itemize}
+
+\subsubsection{Desventajas}
+
+\begin{itemize}
+    \item Limitado a gramáticas LL(1)
+    \item Costo de llamadas recursivas
+    \item Puede causar desbordamiento de pila con entradas grandes
+\end{itemize}
+
+% ============================================
+
+\subsection{2. Análisis Predictivo No Recursivo}
+
+\subsubsection{¿Qué es?}
+
+Es un método \textbf{descendente} que utiliza una \textbf{tabla predictiva} precalculada y una \textbf{pila explícita} en lugar de recursión. Evita el costo de las llamadas de función.
+
+\subsubsection{Cómo Funciona}
+
+\begin{enumerate}
+    \item \textbf{Inicializa una pila} con el símbolo inicial
+    \item \textbf{Lee un token} de la entrada
+    \item \textbf{Consulta la tabla predictiva} para el tope de la pila y el token actual
+    \item \textbf{Ejecuta la acción}: desplazar, reducir o aceptar
+    \item \textbf{Modifica la pila} según la acción
+\end{enumerate}
+
+\subsubsection{Tabla Predictiva}
+
+La tabla predictiva $M[A, a]$ indica qué producción usar cuando:
+\begin{itemize}
+    \item $A$ es el símbolo no-terminal en el tope de la pila
+    \item $a$ es el siguiente token de entrada
+\end{itemize}
+
+\subsubsection{Ventajas}
+
+\begin{itemize}
+    \item No usa recursión (más eficiente)
+    \item Mayor control sobre el tamaño de la pila
+    \item Separación clara entre datos y lógica
+\end{itemize}
+
+\subsubsection{Desventajas}
+
+\begin{itemize}
+    \item Requiere precalcular la tabla
+    \item También limitado a gramáticas LL(1)
+    \item Más complejo de debuggear
+\end{itemize}
+
+% ============================================
+
+\subsection{3. Análisis Ascendente LR}
+
+\subsubsection{¿Qué es?}
+
+Es un método \textbf{ascendente} (bottom-up) que construye el árbol sintáctico desde las hojas hacia la raíz. Usa una tabla \textbf{LR(0)} que define un autómata de estados.
+
+\subsubsection{Cómo Funciona}
+
+\begin{enumerate}
+    \item \textbf{Desplazamiento}: Agrega tokens a una pila hasta encontrar una "manija"
+    \item \textbf{Reducción}: Cuando hay una "manija", aplica una regla de producción
+    \item \textbf{GOTO}: Empuja el símbolo no-terminal resultante
+    \item \textbf{Aceptación}: Cuando se reduce al símbolo inicial
+\end{enumerate}
+
+\subsubsection{Estados y Transiciones}
+
+El analizador LR mantiene una máquina de estados donde:
+\begin{itemize}
+    \item \textbf{Estados}: Representan configuraciones de análisis
+    \item \textbf{Transiciones}: Definidas por la tabla LR
+    \item \textbf{Acciones}: Shift (desplazar), Reduce (reducir), Accept (aceptar)
+\end{itemize}
+
+\subsubsection{Ventajas}
+
+\begin{itemize}
+    \item Maneja gramáticas más complejas (no solo LL(1))
+    \item Detecta errores más rápidamente que métodos descendentes
+    \item Puede procesar más lenguajes
+\end{itemize}
+
+\subsubsection{Desventajas}
+
+\begin{itemize}
+    \item Mucho más complejo de entender
+    \item La construcción de la tabla LR es tedioso
+    \item Mayor consumo de memoria para la tabla
+\end{itemize}
+
+% ============================================
+\section{Estructura del Código}
+% ============================================
+
+\subsection{Archivos Principales}
+
+\subsubsection{main.go}
+
+Contiene el servidor web HTTP y la interfaz gráfica:
+
+\begin{itemize}
+    \item \texttt{handleIndex()}: Sirve la página HTML principal
+    \item \texttt{handleAnalizar()}: Punto de entrada de API REST
+    \item \texttt{analizarPredictivoRecursivo()}: Llama al método y captura resultados
+    \item \texttt{analizarPredictivoNoRecursivo()}: Análisis no-recursivo
+    \item \texttt{analizarLR()}: Análisis ascendente LR
+    \item \textbf{htmlContent}: Contiene la interfaz gráfica completa en HTML/CSS/JavaScript
+\end{itemize}
+
+\subsubsection{predictivo\_recursivo.go}
+
+Implementación del método predictivo recursivo:
+
+\begin{itemize}
+    \item \texttt{PredictivoRecursivo}: Estructura con estado del analizador
+    \item \texttt{E()}, \texttt{El()}, \texttt{T()}, \texttt{Tl()}, \texttt{F()}: Funciones para cada regla gramatical
+    \item \texttt{nextToken()}: Tokenización de entrada
+    \item \texttt{Parse()}: Función principal de análisis
+    \item \texttt{pasos}: Lista de pasos ejecutados para explicación
+\end{itemize}
+
+\subsubsection{desendente\_no\_recursivo.go}
+
+Implementación del método predictivo no-recursivo:
+
+\begin{itemize}
+    \item \texttt{PredictivoNoRecursivo}: Con tablas predictivas
+    \item \texttt{Pila}: Estructura para mantener símbolos
+    \item \texttt{tablaAccion}: Tabla de decisiones sintácticas
+    \item \texttt{Parse()}: Análisis iterativo con pila
+\end{itemize}
+
+\subsubsection{ascendente\_lr.go}
+
+Implementación del método ascendente LR:
+
+\begin{itemize}
+    \item \texttt{AnalizadorLR}: Con tabla de acción y GOTO
+    \item \texttt{EstadoLR}: Estados del autómata
+    \item \texttt{ArbolSintactico}: Estructura del árbol construido
+    \item \texttt{construirTablas()}: Genera la tabla LR(0)
+    \item \texttt{Parse()}: Algoritmo shift-reduce
+\end{itemize}
+
+\subsection{Flujo de Ejecución}
+
+\begin{verbatim}
+Usuario abre navegador
+        ↓
+Interfaz web (HTML/CSS/JavaScript)
+        ↓
+Usuario introduce expresión y selecciona método
+        ↓
+Petición POST a /api/analizar
+        ↓
+handleAnalizar() recibe datos
+        ↓
+    ↙              ↓              ↘
+Recursivo    No Recursivo        LR
+    ↓              ↓              ↓
+Crea objeto  Crea objeto      Crea objeto
+    ↓              ↓              ↓
+Llama Parse()  Llama Parse()   Llama Parse()
+    ↓              ↓              ↓
+Retorna        Retorna          Retorna
+resultados     resultados       resultados
+    ↓              ↓              ↓
+    ↖              ↓              ↗
+        Respuesta JSON
+             ↓
+    JavaScript procesa
+             ↓
+    Muestra resultados
+\end{verbatim}
+
+% ============================================
+\section{Interfaz Gráfica}
+% ============================================
+
+\subsection{Descripción General}
+
+La interfaz web es responsiva y moderna, construida con:
+
+\begin{itemize}
+    \item \textbf{HTML5}: Estructura de la página
+    \item \textbf{CSS3}: Estilos con gradientes y animaciones
+    \item \textbf{Bootstrap Icons}: Iconografía visual
+    \item \textbf{JavaScript vanilla}: Interactividad sin dependencias
+\end{itemize}
+
+\subsection{Componentes Principales}
+
+\subsubsection{Panel de Configuración}
+
+\begin{itemize}
+    \item Campo de entrada para la expresión
+    \item Botones de ejemplo rápido
+    \item Selector de método de análisis
+    \item Botones de análisis y limpieza
+\end{itemize}
+
+\subsubsection{Panel de Información}
+
+\begin{itemize}
+    \item Descripción de cada método
+    \item Características diferenciales
+    \item Información educativa
+\end{itemize}
+
+\subsubsection{Panel de Resultados}
+
+\begin{itemize}
+    \item Mensaje de éxito o error
+    \item Tabla de pasos del análisis
+    \item Árbol sintáctico resultante
+    \item Explicaciones detalladas del proceso
+\end{itemize}
+
+\subsection{Paleta de Colores}
+
+\begin{itemize}
+    \item \textbf{\#2D261D} (Marrón muy oscuro): Fondo principal
+    \item \textbf{\#A79675} (Beige/Marrón): Acentos y gradientes
+    \item \textbf{\#C1B18B} (Dorado): Detalles y botones
+    \item \textbf{\#DCCFAA} (Crema): Texto en encabezados
+    \item \textbf{\#F5F3EF} (Crema muy clara): Cards
+\end{itemize}
+
+% ============================================
+\section{Ejemplos de Uso}
+% ============================================
+
+\subsection{Ejemplo 1: Expresión Válida Simple}
+
+\textbf{Entrada:} \texttt{3+5*2}
+
+\textbf{Procesamiento:}
+
+\begin{enumerate}
+    \item Tokenización: [3, +, 5, *, 2, EOF]
+    \item Método Recursivo: Aplica reglas E → T E' → ... hasta consumir todos los tokens
+    \item Método No Recursivo: Consulta tabla y reduce según reglas
+    \item Método LR: Desplaza tokens, reduce producs, hasta llegar a S (éxito)
+\end{enumerate}
+
+\textbf{Resultado:} ✅ Análisis exitoso
+
+\subsection{Ejemplo 2: Expresión con Paréntesis}
+
+\textbf{Entrada:} \texttt{(3+5)*2}
+
+\textbf{Procesamiento:}
+
+Los paréntesis fuerzan una subexpresión que es procesada recursivamente, permitiendo que el analizador comprenda la precedencia correcta de operadores.
+
+\textbf{Resultado:} ✅ Análisis exitoso
+
+\subsection{Ejemplo 3: Expresión Inválida}
+
+\textbf{Entrada:} \texttt{3++5}
+
+\textbf{Procesamiento:}
+
+Cuando se encuentra el segundo \texttt{+}, el analizador espera un número o paréntesis (un factor), no otro operador.
+
+\textbf{Resultado:} ❌ Error de sintaxis con explicación
+
+% ============================================
+\section{Cómo Ejecutar el Programa}
+% ============================================
+
+\subsection{Requisitos}
+
+\begin{itemize}
+    \item Go 1.19 o superior
+    \item Un navegador web moderno
+\end{itemize}
+
+\subsection{Pasos de Ejecución}
+
+\begin{enumerate}
+    \item Clonar o descargar el proyecto
+    \item Abrir una terminal en el directorio del proyecto
+    \item Compilar: \texttt{go build -o app.exe main.go *.go}
+    \item Ejecutar: \texttt{./app.exe}
+    \item Abirir navegador: \texttt{http://localhost:3000}
+\end{enumerate}
+
+% ============================================
+\section{Comparativa de Métodos}
+% ============================================
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|c|c|c|}
+\hline
+\textbf{Característica} & \textbf{Recursivo} & \textbf{No Recursivo} & \textbf{LR} \\
+\hline
+Dirección & Descendente & Descendente & Ascendente \\
+\hline
+Recursión & Sí & No & No \\
+\hline
+Tabla Predictiva & No & Sí & Sí (LR) \\
+\hline
+Gramáticas LL(1) & Sí & Sí & No (más complejas) \\
+\hline
+Complejidad & Baja & Media & Alta \\
+\hline
+Velocidad & Media & Rápido & Rápido \\
+\hline
+Consumo Memoria & Alto (stack) & Medio & Medio \\
+\hline
+Fácil de Entender & Muy & Medio & No \\
+\hline
+Producción & No & Sí & Sí \\
+\hline
+\end{tabular}
+\caption{Comparativa entre métodos de análisis sintáctico}
+\end{table}
+
+% ============================================
+\section{Conclusiones}
+% ============================================
+
+Este proyecto demuestra de forma práctica cómo funcionan los tres enfoques principales de análisis sintáctico:
+
+\begin{enumerate}
+    \item \textbf{Predictivo Recursivo}: Ideal para educación y comprensión fundamental
+    \item \textbf{Predictivo No Recursivo}: Balance entre simplicidad y eficiencia
+    \item \textbf{Ascendente LR}: Estándar industrial para compiladores reales
+\end{enumerate}
+
+Cada método tiene sus ventajas y desventajas, y la elección depende de:
+\begin{itemize}
+    \item La complejidad de la gramática
+    \item Los requisitos de rendimiento
+    \item El mantenimiento del código
+    \item La portabilidad
+\end{itemize}
+
+La interfaz gráfica proporciona una forma interactiva y educativa de entender cómo funcionan estos algoritmos sin necesidad de estudiar código complejo.
+
+% ============================================
+\section{Referencias}
+% ============================================
+
+\begin{enumerate}
+    \item Aho, A. V., Lam, M. S., Sethi, R., \& Ullman, J. D. (2006). 
+    \textit{Compilers: Principles, Techniques, and Tools} (2nd ed.). Pearson Education.
+    
+    \item Appel, A. W., \& Palsberg, J. (2002). 
+    \textit{Modern Compiler Implementation in Java} (2nd ed.). Cambridge University Press.
+    
+    \item Language Specification Go: \texttt{https://golang.org/ref/spec}
+    
+    \item Bootstrap Icons: \texttt{https://icons.getbootstrap.com/}
+\end{enumerate}
+
+% ============================================
+\section{Apéndice: Notación}
+% ============================================
+
+\subsection{Símbolos Gramaticales}
+
+\begin{itemize}
+    \item Letras mayúsculas: Símbolos no-terminales (E, T, F)
+    \item Letras minúsculas: Terminales (números, operadores)
+    \item $\epsilon$: Producción vacía
+    \item $|$: Alternativa (o)
+    \item $\rightarrow$: Produce
+\end{itemize}
+
+\subsection{Notación de Máquinas de Estado}
+
+\begin{itemize}
+    \item Estados: Números (0, 1, 2, ...)
+    \item Transiciones: Etiquetadas con símbolos
+    \item Estados de aceptación: Indicados con \textbf{acc}
+    \item Estados de error: Sin transición disponible
+\end{itemize}
+
+\end{document}
